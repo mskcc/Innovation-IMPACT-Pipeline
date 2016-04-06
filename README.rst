@@ -1,4 +1,5 @@
-# IMPACT Pipeline fork for the Innovation Lab
+
+IMPACT Pipeline fork for the Innovation Lab
 
 IMPACT-Pipeline: MSK-IMPACT assay data analysis framework to process data on LSF/SGE
 ====================================================================================
