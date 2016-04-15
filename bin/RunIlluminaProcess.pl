@@ -100,6 +100,8 @@
 #RS: Adding funtionality to run on LSF
 #v3.0.1
 #RS: Can merge samples without index.
+#v3.0.2
+#RS: Added funtionality to bypass MarkDuplicates and CNV calling.
 #############################
 use strict;
 use Getopt::Long;
@@ -130,7 +132,9 @@ $revision =~ s/\s//g;
 my $supportScriptPath = $root
   . "support-scripts/"
   ;    #path to support scripts, independent of installation location
-if (
+my $dataPath = $root
+  . "data/"
+  if (
 	@ARGV < 1
 	or !GetOptions(
 		'config|c:s'          => \$config_file,
@@ -237,11 +241,12 @@ my (
 	$Pindel_Max_Indel_Len,        $triallelic_fix,
 	$FindCoveredIntervals,        $TargetRegionLIST,
 	$CLUSTER,                     $BSUB,
-	$ZCAT
+	$ZCAT,                        $runCNV,
+	$runMD,                       $MDmetricsFile
 );
 
 sub VersionMessage {
-	our $VERSION = version->declare("v3.0.1");
+	our $VERSION = version->declare("v3.0.2");
 	print "You are running $0 version : $VERSION\n";
 	exit();
 }
@@ -431,6 +436,34 @@ else {
 	}
 	if ( $runABRA == 2 ) {
 		$logger->info("GATK Re-alignment will be ran");
+	}
+}
+
+#Check for runMD flag
+if ( !$runMD ) {
+	$logger->info("Picard MarkDuplicates will be ran");
+	$runMD = 1;
+}
+else {
+	if ( $runMD == 1 ) {
+		$logger->info("Picard MarkDuplicates will be ran");
+	}
+	if ( $runMD == 2 ) {
+		$logger->info("Picard MarkDuplicates will not be ran");
+	}
+}
+
+#Check for runCNV flag
+if ( !$runCNV ) {
+	$logger->info("Copy Number Step will be ran");
+	$runCNV = 1;
+}
+else {
+	if ( $runCNV == 1 ) {
+		$logger->info("Copy Number Step will be ran");
+	}
+	if ( $runCNV == 2 ) {
+		$logger->info("Copy Number Step will not be ran");
 	}
 }
 
@@ -664,6 +697,18 @@ if ( !$standardNormalList ) {
 }
 else {
 	$logger->info("Standard Normal File to be used is $standardNormalList");
+}
+
+#Check if path to MDmetricsFile is give
+if ( !$MDmetricsFile ) {
+	$MDmetricsFile = $dataPath . "/testMD.metrics";
+	$logger->info(
+"Dummy File for Picard MarkDuplicates Metrics path is not given, default location ($MDmetricsFile) will be used."
+	);
+}
+else {
+	$logger->info(
+		"Dummy File for MarkDuplicates Metrics location: $MDmetricsFile.");
 }
 
 #Check if path to exon2gene coverage script is given
@@ -1135,11 +1180,14 @@ sub GetConfiguration {
 		$CountErrors              = $location{"CountErrors"};
 		$StandardNormalsDirectory = $location{"StandardNormalsDirectory"};
 		$FindCoveredIntervals     = $location{"FindCoveredIntervals"};
+		$MDmetricsFile            = $location{"MDmetricsFile"};
 		##Set Parameters
 		$sampleFile     = $parameters{"SampleFile"};
 		$titleFile      = $parameters{"TitleFile"};
 		$fastqSource    = $parameters{"FastqSource"};
 		$runABRA        = $parameters{"runABRA"};
+		$runCNV         = $parameters{"runCNV"};
+		$runMD          = $parameters{"runMD"};
 		$triallelic_fix = $parameters{"TriallelicFix"};
 
 		#$outdir = $parameters{"OutputDir"};
@@ -1865,7 +1913,12 @@ sub MergeDataFromDirectory {
 		return ( \@sortedparseFilenames );
 	}
 	else {
-		for ( my $sampleNum = 0 ; $sampleNum < scalar(@titleBarcode) ; $sampleNum++ ) {
+		for (
+			my $sampleNum = 0 ;
+			$sampleNum < scalar(@titleBarcode) ;
+			$sampleNum++
+		  )
+		{
 			my $name =
 			    $titleSampleId[$sampleNum] . "_"
 			  . $titleBarcode[$sampleNum] . "_"
@@ -2173,23 +2226,51 @@ sub ProcessBams {
 	##################
 	#Run Mark Duplicates
 	$logger->info("Started running Mark Duplicates jobs on SGE");
-	for ( my $i = 0 ; $i < scalar(@names) ; $i++ ) {
-		my ( $MarkDuplicatesBamFile, $notifyname ) =
-		  &RunMarkDuplicates( $names[$i], $outdir, $i );
-		push( @notifyNames,                $notifyname );
-		push( @MarkDuplicatesBamFilenames, $MarkDuplicatesBamFile );
-	}
+	if ( $runMD == 1 ) {
+		for ( my $i = 0 ; $i < scalar(@names) ; $i++ ) {
+			my ( $MarkDuplicatesBamFile, $notifyname ) =
+			  &RunMarkDuplicates( $names[$i], $outdir, $i );
+			push( @notifyNames,                $notifyname );
+			push( @MarkDuplicatesBamFilenames, $MarkDuplicatesBamFile );
+		}
 
-	#waiting for Mark Duplicates to finish
-	&WaitToFinish( $outdir, @notifyNames );
-	$now = time - $now;
-	$logger->info("Finished running Mark Duplicates jobs on SGE");
-	printf(
-		"Total MarkDuplicates run time: %02d:%02d:%02d\n\n",
-		int( $now / 3600 ),
-		int( ( $now % 3600 ) / 60 ),
-		int( $now % 60 )
-	);
+		#waiting for Mark Duplicates to finish
+		&WaitToFinish( $outdir, @notifyNames );
+		$now = time - $now;
+		$logger->info("Finished running Mark Duplicates jobs on SGE");
+		printf(
+			"Total MarkDuplicates run time: %02d:%02d:%02d\n\n",
+			int( $now / 3600 ),
+			int( ( $now % 3600 ) / 60 ),
+			int( $now % 60 )
+		);
+	}
+	else {
+		$logger->info("Making Softlinks of Files for Mark Duplicates");
+		for ( my $i = 0 ; $i < scalar(@names) ; $i++ ) {
+
+			my $outFilename     = $names[$i];
+			my $metricsFilename = $names[$i];
+			$outFilename     =~ s/\.bam/_MD\.bam/g;
+			$metricsFilename =~ s/\.bam/_MD\.metrics/g;
+			my $cmd = "ln -s $outdir/$names[$i] $outdir/$outFilename";
+			$logger->debug("$cmd");
+			eval { `$cmd`; };
+			if ($@) {
+				$logger->warn("Can not create softlinks for MarkDuplicates\n");
+				exit;
+			}
+			$cmd = "ln -s $MDmetricsFile $outdir/$metricsFilename";
+			$logger->debug("$cmd");
+			eval { `$cmd`; };
+			if ($@) {
+				$logger->warn(
+"Can not create softlinks for MarkDuplicates Metrics Files\n"
+				);
+				exit;
+			}
+		}
+	}
 
 	#Check Mark duplicate files
 	my $prog;
@@ -5643,16 +5724,16 @@ sub CompileMetrics {
 		if ( $CLUSTER eq "SGE" )
 		{
 			my $cmd =
-"$QSUB -q $queue -V -wd $outdir -N CompileMetrics.$$ -o CompileMetrics.$$.stdout -e CompileMetrics.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1  -b y '$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -qsub $QSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript'";
+"$QSUB -q $queue -V -wd $outdir -N CompileMetrics.$$ -o CompileMetrics.$$.stdout -e CompileMetrics.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1  -b y '$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -qsub $QSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript -rc $runCNV'";
 			$logger->debug("COMMAND: $cmd");
-`$QSUB -q $queue -V -wd $outdir -N CompileMetrics.$$ -o CompileMetrics.$$.stdout -e CompileMetrics.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1  -b y "$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -qsub $QSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript"`;
+`$QSUB -q $queue -V -wd $outdir -N CompileMetrics.$$ -o CompileMetrics.$$.stdout -e CompileMetrics.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1  -b y "$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -qsub $QSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript -rc $runCNV"`;
 `$QSUB -q $queue -V -wd $outdir -hold_jid CompileMetrics.$$ -N NotifyCM.$$ -e NotifyCM.$$.stderr -o NotifyCM.$$.stat -l h_vmem=2G,virtual_free=2G -pe smp 1 -b y "$outdir/Notify.csh"`;
 		}
 		else {
 			my $cmd =
-"$BSUB -q $queue -cwd $outdir -J CompileMetrics.$$ -o CompileMetrics.$$.%J.stdout -e CompileMetrics.$$.%J.stderr -We 0:59 -R \"rusage[mem=2]\" -R \"rusage[iounits=0]\" -M 4 -n 1 \"$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -bsub $BSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript\"";
+"$BSUB -q $queue -cwd $outdir -J CompileMetrics.$$ -o CompileMetrics.$$.%J.stdout -e CompileMetrics.$$.%J.stderr -We 0:59 -R \"rusage[mem=2]\" -R \"rusage[iounits=0]\" -M 4 -n 1 \"$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -bsub $BSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript -rc $runCNV\"";
 			$logger->debug("COMMAND: $cmd");
-`$BSUB -q $queue -cwd $outdir -J CompileMetrics.$$ -o CompileMetrics.$$.%J.stdout -e CompileMetrics.$$.%J.stderr -We 0:59 -R "rusage[mem=2]" -R "rusage[iounits=0]" -M 4 -n 1 "$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -bsub $BSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript"`;
+`$BSUB -q $queue -cwd $outdir -J CompileMetrics.$$ -o CompileMetrics.$$.%J.stdout -e CompileMetrics.$$.%J.stderr -We 0:59 -R "rusage[mem=2]" -R "rusage[iounits=0]" -M 4 -n 1 "$PERL $CompileMetrics -i $allBams -t $titleFile -am $AllMetrics -cn $BestCopyNumber -ncn $NormVsNormCopyNumber -ce $exonIntervalsFile -gcb $GCBiasFile -snlo $StdNormalLoess_TM -snlon $StdNormalLoess_NVN -gia $GeneIntervalAnn -tia $TilingIntervalAnn -ln $LoessNormalization -o $outdir -q $queue -bsub $BSUB -p $PERL -rh $RHOME -rl $RLIBS -ms $GenerateMetricsFilesScript -rc $runCNV"`;
 `$BSUB -q $queue -cwd $outdir -w "post_done(CompileMetrics.$$)" -J NotifyCM.$$ -e NotifyCM.$$.%J.stderr -o NotifyCM.$$.stat -We 0:59 -R "rusage[mem=2]" -R "rusage[iounits=0]" -M 4 -n 1 "$outdir/Notify.csh"`;
 		}
 	};
