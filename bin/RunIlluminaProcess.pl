@@ -2253,6 +2253,7 @@ sub ProcessBams {
 			my $metricsFilename = $names[$i];
 			$outFilename     =~ s/\.bam/_MD\.bam/g;
 			$metricsFilename =~ s/\.bam/_MD\.metrics/g;
+			push( @MarkDuplicatesBamFilenames, $outFilename );
 			my $cmd = "ln -s $outdir/$names[$i] $outdir/$outFilename";
 			$logger->debug("$cmd");
 			eval { `$cmd`; };
