@@ -4823,9 +4823,9 @@ sub RunTrimGalore {
 			}
 			else {
 				my $cmd =
-"`$BSUB -q $queue -cwd $outdir -J Clipping.$id.$$ -o Clipping.$id.$$.%J.stdout -e Clipping.$id.$$.%J.stderr -R \"rusage[mem=2]\" -M 4 -n 1 \"$PERL $TrimGalore --paired --gzip -q 1 --suppress_warn --stringency 3 -length 25 -o $outdir -a $adapter1 -a2 $adapter2 $file1 $file2\"";
+"`$BSUB -q $queue -cwd $outdir -J Clipping.$id.$$ -o Clipping.$id.$$.%J.stdout -e Clipping.$id.$$.%J.stderr -R \"rusage[mem=4]\" -M 20 -n 1 \"$PERL $TrimGalore --paired --gzip -q 1 --suppress_warn --stringency 3 -length 25 -o $outdir -a $adapter1 -a2 $adapter2 $file1 $file2\"";
 				$logger->debug("COMMAND : $cmd");
-`$BSUB -q $queue -cwd $outdir -J Clipping.$id.$$ -o Clipping.$id.$$.%J.stdout -e Clipping.$id.$$.%J.stderr -We 0:59 -R "rusage[mem=2]" -M 4 -n 1 "$PERL $TrimGalore --paired --gzip -q 1 --suppress_warn --stringency 3 -length 25 -o $outdir -a $adapter1 -a2 $adapter2 $file1 $file2"`;
+`$BSUB -q $queue -cwd $outdir -J Clipping.$id.$$ -o Clipping.$id.$$.%J.stdout -e Clipping.$id.$$.%J.stderr -We 24:00 -R "rusage[mem=4]" -M 10 -n 1 "$PERL $TrimGalore --paired --gzip -q 1 --suppress_warn --stringency 3 -length 25 -o $outdir -a $adapter1 -a2 $adapter2 $file1 $file2"`;
 `$BSUB -q $queue -cwd $outdir -w "post_done(Clipping.$id.$$)" -J NotifyCR.$id.$$ -e NotifyCR.$id.$$.%J.stderr -o NotifyCR.$id.$$.stat -We 0:59 -R "rusage[mem=2]" -R "rusage[iounits=0]" -M 4 -n 1 "$outdir/Notify.csh"`;
 			}
 		};
@@ -6006,7 +6006,7 @@ sub RunSomaticMutIndelFilter {
 			if ( $CLUSTER eq "SGE" )
 			{
 				my $cmd =
-"$QSUB -q $queue -V -wd $outdir -N FilterSID.$id.$$ -o FilterSID.$id.$$.stdout -e FilterSID.$id.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1 -b y '$PERL $filter_SomaticIndel -t $outdir/$IndelVerboseFilename -v $outdir/$IndelVcfFilename -s $tFileId -o $outdir -dp $dp_SomIndelStdFilter -ad $ad_SomIndelStdFilter -vf $vf_SomIndelStdFilter -tnr $TNfreqRatio_SomIndelStdFilter'";
+"$QSUB -q $queue -V -wd $outdir -N FilterMuTect.$id.$$ -o FilterMuTect.$id.$$.stdout -e FilterMuTect.$id.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1 -b y '$PERL $filter_Mutect -t $outdir/$MutationVerboseFilename -v $outdir/$MutationVcfFilename -s $tFileId -o $outdir -dp $dp_MutectStdFilter -ad $ad_MutectStdFilter -vf $vf_MutectStdFilter -tnr $TNfreqRatio_MutectStdFilter'";
 				$logger->debug("COMMAND: $cmd");
 `$QSUB -q $queue -V -wd $outdir -N FilterMuTect.$id.$$ -o FilterMuTect.$id.$$.stdout -e FilterMuTect.$id.$$.stderr -l h_vmem=2G,virtual_free=2G -pe smp 1 -b y "$PERL $filter_Mutect -t $outdir/$MutationVerboseFilename -v $outdir/$MutationVcfFilename -s $tFileId -o $outdir -dp $dp_MutectStdFilter -ad $ad_MutectStdFilter -vf $vf_MutectStdFilter -tnr $TNfreqRatio_MutectStdFilter"`;
 `$QSUB -q $queue -V -wd $outdir -hold_jid FilterMuTect.$id.$$ -N NotifyFMT.$id.$$ -e NotifyFMT.$id.$$.stderr -o NotifyFMT.$id.$$.stat -l h_vmem=2G,virtual_free=2G -pe smp 1 -b y "$outdir/Notify.csh"`;
